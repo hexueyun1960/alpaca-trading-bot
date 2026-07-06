@@ -16,9 +16,9 @@ def _json_default(value: Any) -> Any:
 class TradeJournal:
     def __init__(self, path: str) -> None:
         self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def record(self, event_type: str, payload: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,

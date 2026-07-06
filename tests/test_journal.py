@@ -7,6 +7,15 @@ from src.risk import RiskDecision
 
 
 class TradeJournalTests(unittest.TestCase):
+    def test_creates_parent_directory_on_init(self):
+        path = Path("logs/nested/test_journal.jsonl")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        self.addCleanup(lambda: path.parent.rmdir() if path.parent.exists() else None)
+
+        TradeJournal(str(path))
+
+        self.assertTrue(path.parent.exists())
+
     def test_records_jsonl_event(self):
         path = Path("logs/test_journal.jsonl")
         path.unlink(missing_ok=True)

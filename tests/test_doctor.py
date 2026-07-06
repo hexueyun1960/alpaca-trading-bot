@@ -55,6 +55,25 @@ class DoctorTests(unittest.TestCase):
 
         self.assertFalse(guard.ok)
 
+    def test_settings_blocks_live_orders_without_explicit_allow(self):
+        settings = make_settings(
+            base_url="https://api.alpaca.markets",
+            dry_run=False,
+            enable_trading=True,
+        )
+
+        self.assertFalse(settings.can_submit_orders)
+
+    def test_settings_allows_live_orders_only_when_explicitly_allowed(self):
+        settings = make_settings(
+            base_url="https://api.alpaca.markets",
+            dry_run=False,
+            enable_trading=True,
+            allow_live_trading=True,
+        )
+
+        self.assertTrue(settings.can_submit_orders)
+
     def test_rejects_too_short_monitor_interval(self):
         checks = validate_settings(make_settings(monitor_interval_seconds=1))
         interval = next(check for check in checks if check.name == "monitor_interval_seconds")

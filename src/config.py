@@ -60,10 +60,17 @@ class Settings:
     enable_trading: bool
     journal_path: str
     monitor_interval_seconds: int
+    allow_live_trading: bool = False
+
+    @property
+    def is_paper_base_url(self) -> bool:
+        return "paper-api.alpaca.markets" in self.base_url
 
     @property
     def can_submit_orders(self) -> bool:
-        return self.enable_trading and not self.dry_run
+        if not self.enable_trading or self.dry_run:
+            return False
+        return self.is_paper_base_url or self.allow_live_trading
 
 
 def load_settings() -> Settings:
@@ -85,4 +92,5 @@ def load_settings() -> Settings:
         enable_trading=_as_bool(os.getenv("ALPACA_ENABLE_TRADING"), default=False),
         journal_path=os.getenv("ALPACA_JOURNAL_PATH", "logs/trade_journal.jsonl"),
         monitor_interval_seconds=_as_int("ALPACA_MONITOR_INTERVAL_SECONDS", 60),
+        allow_live_trading=_as_bool(os.getenv("ALPACA_ALLOW_LIVE_TRADING"), default=False),
     )

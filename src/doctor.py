@@ -13,8 +13,9 @@ class ConfigCheck:
 
 
 def validate_settings(settings: Settings) -> list[ConfigCheck]:
-    is_paper_base_url = "paper-api.alpaca.markets" in settings.base_url
+    is_paper_base_url = settings.is_paper_base_url
     can_submit_orders = settings.can_submit_orders
+    wants_live_orders = settings.enable_trading and not settings.dry_run and not is_paper_base_url
 
     checks = [
         ConfigCheck(
@@ -30,9 +31,18 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
             else "ALPACA_API_SECRET_KEY is missing",
         ),
         ConfigCheck(
-            "paper_base_url",
-            is_paper_base_url,
-            f"base URL is {settings.base_url}",
+            "base_url",
+            bool(settings.base_url),
+            f"base URL is {settings.base_url}" if settings.base_url else "ALPACA_BASE_URL is missing",
+        ),
+        ConfigCheck(
+            "live_trading_guard",
+            not wants_live_orders or settings.allow_live_trading,
+            "safe: live trading is blocked unless ALPACA_ALLOW_LIVE_TRADING=true"
+            if not wants_live_orders
+            else "live trading explicitly allowed by ALPACA_ALLOW_LIVE_TRADING=true"
+            if settings.allow_live_trading
+            else "blocked: live endpoint requires ALPACA_ALLOW_LIVE_TRADING=true",
         ),
         ConfigCheck(
             "symbols",
@@ -75,12 +85,14 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
         ),
         ConfigCheck(
             "live_order_guard",
-            not can_submit_orders or is_paper_base_url,
+            not wants_live_orders or settings.allow_live_trading,
             "paper order submission is enabled"
             if can_submit_orders and is_paper_base_url
+            else "live order submission is explicitly enabled"
+            if can_submit_orders and settings.allow_live_trading
             else "safe: dry-run is on or trading is disabled"
-            if not can_submit_orders
-            else "blocked: order submission is only allowed against paper API",
+            if not wants_live_orders
+            else "blocked: live order submission requires ALPACA_ALLOW_LIVE_TRADING=true",
         ),
     ]
     return checks
