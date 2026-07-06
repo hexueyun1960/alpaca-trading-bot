@@ -1,0 +1,92 @@
+# AIPACA 项目进展
+
+本文档用于记录 AIPACA 的开发进度、关键决策、当前状态和下一步计划。
+
+## 2026-07-02
+
+### 当前状态
+
+- 已创建第一版 Python 项目骨架。
+- 已加入默认安全的自动交易循环。
+- 已加入 Alpaca REST 客户端封装，当前只使用 Python 标准库。
+- 已加入一个简单的均线交叉策略。
+- 已补强行情读取，默认向前读取 120 天市场数据。
+- 已加入持久化 JSONL 交易日志。
+- 已加入本地配置检查命令：`python -m src.doctor`。
+- 已加入基础风控：
+  - 股票代码白名单
+  - 单笔订单最大金额限制
+  - 最低现金保留要求
+  - 没有现有多头持仓时禁止卖出
+  - 显式 paper trading 启用开关
+  - 默认 dry-run，不真实提交订单
+- 已为策略、风控、配置检查和交易日志添加基础单元测试。
+
+### 验证结果
+
+- `python -m unittest discover -s tests` 已通过，共 12 个测试。
+- `python -m compileall src tests` 已通过。
+- `python -m src.doctor` 已通过，确认 Alpaca paper API 凭证、paper URL、交易标的、K 线数量、行情回看天数、日志路径和 live-order guard 均处于可运行状态。
+- `python -m src.bot` 已完成一次 Alpaca paper dry-run 连通性测试。
+- 本次 dry-run 成功读取 `SPY` 的 60 根 K 线。
+- 策略生成 `buy` 信号，但由于 `AIPACA_DRY_RUN=true` 且 `AIPACA_ENABLE_TRADING=false`，风控阻止真实提交订单，仅写入订单预览。
+
+### 当前阻塞点 / 安全闸门
+
+- Alpaca paper API 凭证已经配置并通过检查。
+- 当前仍处于安全 dry-run 模式，不会提交订单。
+- 如果要进入 paper order 提交测试，必须显式修改 `.env`：
+
+```text
+AIPACA_DRY_RUN=false
+AIPACA_ENABLE_TRADING=true
+```
+
+在加入更完整的回测、订单状态追踪和停止开关之前，不建议打开 paper order 提交。
+
+### 凭证接入检查
+
+- 已运行 `python -m src.doctor`。
+- 当前结果：`ALPACA_API_KEY_ID` 和 `ALPACA_API_SECRET_KEY` 已配置。
+- 安全配置正常：paper URL、交易标的、K 线数量、行情回看天数、日志路径和 live-order guard 均通过检查。
+- 注意：不要把 API key 填在 `.env.example`，应填写在 `.env`；`.env` 已被 `.gitignore` 忽略，适合存放本地密钥。
+
+### 当前架构
+
+```text
+src/config.py        环境变量配置和安全默认值
+src/alpaca_client.py 最小 Alpaca REST 客户端
+src/data.py          行情数据读取，默认带历史回看范围
+src/strategy.py      策略信号生成
+src/risk.py          下单前风控检查
+src/journal.py       JSONL 决策和订单日志
+src/doctor.py        本地配置检查器
+src/broker.py        下单封装
+src/bot.py           单轮交易运行入口
+tests/               基础单元测试
+```
+
+### 运行模式
+
+AIPACA 目前一次只运行一轮交易循环。系统默认处于 dry-run 模式，不会提交订单。只有下面两个配置同时满足时，才允许提交 paper order：
+
+```text
+AIPACA_DRY_RUN=false
+AIPACA_ENABLE_TRADING=true
+```
+
+### 下一阶段里程碑
+
+1. 为当前均线策略加入回测，先验证历史表现。
+2. 加入订单状态追踪和失败重试记录。
+3. 加入一键停止开关和每日最大亏损限制。
+4. 再进行小金额 paper order 提交测试。
+5. 加入定时器，让系统能在美股交易时间内周期运行。
+6. 加入持仓、订单、风控状态的 dashboard 或报告视图。
+7. 在 paper trading 稳定运行一段时间之后，再设计实盘交易审批流程。
+
+### 注意事项
+
+- 在 paper trading 观察数周之前，保持实盘交易关闭。
+- 后续所有策略都必须经过 `risk.py`，不要让策略代码绕过风控直接下单。
+- AI 生成的交易信号只能作为辅助输入，不能直接拥有下单权限，除非后续已经建立足够强的风控和人工审批机制。
