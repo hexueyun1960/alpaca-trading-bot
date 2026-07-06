@@ -1,1 +1,1 @@
-"""AIPACA automated trading prototype."""
+"""Alpaca automated trading prototype."""

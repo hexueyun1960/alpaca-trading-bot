@@ -1,6 +1,6 @@
-# AIPACA
+# Alpaca
 
-AIPACA is a paper-first automated trading prototype for Alpaca.
+Alpaca is a paper-first automated trading prototype for Alpaca.
 
 The current goal is to build a safe trading loop before any live trading:
 
@@ -33,7 +33,7 @@ Run the monitor loop:
 python -m src.monitor
 ```
 
-By default, AIPACA does not place real paper orders. It prints the order it would submit.
+By default, Alpaca does not place real paper orders. It prints the order it would submit.
 
 Check configuration before running:
 
@@ -45,18 +45,18 @@ Trading decisions are written to `logs/trade_journal.jsonl` by default.
 
 ## Safety Defaults
 
-- `AIPACA_DRY_RUN=true`
-- `AIPACA_ENABLE_TRADING=false`
+- `ALPACA_DRY_RUN=true`
+- `ALPACA_ENABLE_TRADING=false`
 - `ALPACA_BASE_URL=https://paper-api.alpaca.markets`
-- Symbol whitelist is required through `AIPACA_SYMBOLS`
-- Monitor loop interval defaults to `AIPACA_MONITOR_INTERVAL_SECONDS=60`
+- Symbol whitelist is required through `ALPACA_SYMBOLS`
+- Monitor loop interval defaults to `ALPACA_MONITOR_INTERVAL_SECONDS=60`
 - Short VWAP spike orders use regular-hours market orders only
 
 To allow paper orders, both of these must be set:
 
 ```text
-AIPACA_DRY_RUN=false
-AIPACA_ENABLE_TRADING=true
+ALPACA_DRY_RUN=false
+ALPACA_ENABLE_TRADING=true
 ```
 
 Keep these disabled until paper credentials and risk limits are confirmed.

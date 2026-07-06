@@ -44,7 +44,7 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
             settings.bar_limit >= 1,
             "bar limit supports latest 1-minute VWAP signal"
             if settings.bar_limit >= 1
-            else "AIPACA_BAR_LIMIT should be at least 1",
+            else "ALPACA_BAR_LIMIT should be at least 1",
         ),
         ConfigCheck(
             "market_data_lookback_days",
@@ -71,7 +71,7 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
             settings.monitor_interval_seconds >= 5,
             f"monitor interval is {settings.monitor_interval_seconds} seconds"
             if settings.monitor_interval_seconds >= 5
-            else "AIPACA_MONITOR_INTERVAL_SECONDS should be at least 5",
+            else "ALPACA_MONITOR_INTERVAL_SECONDS should be at least 5",
         ),
         ConfigCheck(
             "live_order_guard",

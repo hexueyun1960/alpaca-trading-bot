@@ -1,6 +1,6 @@
-# AIPACA 项目进展
+# Alpaca 项目进展
 
-本文档用于记录 AIPACA 的开发进度、关键决策、当前状态和下一步计划。
+本文档用于记录 Alpaca 的开发进度、关键决策、当前状态和下一步计划。
 
 ## 2026-07-02
 
@@ -29,7 +29,7 @@
 - `python -m src.doctor` 已通过，确认 Alpaca paper API 凭证、paper URL、交易标的、K 线数量、行情回看天数、日志路径和 live-order guard 均处于可运行状态。
 - `python -m src.bot` 已完成一次 Alpaca paper dry-run 连通性测试。
 - 本次 dry-run 成功读取 `SPY` 的 60 根 K 线。
-- 策略生成 `buy` 信号，但由于 `AIPACA_DRY_RUN=true` 且 `AIPACA_ENABLE_TRADING=false`，风控阻止真实提交订单，仅写入订单预览。
+- 策略生成 `buy` 信号，但由于 `ALPACA_DRY_RUN=true` 且 `ALPACA_ENABLE_TRADING=false`，风控阻止真实提交订单，仅写入订单预览。
 
 ### 当前阻塞点 / 安全闸门
 
@@ -38,8 +38,8 @@
 - 如果要进入 paper order 提交测试，必须显式修改 `.env`：
 
 ```text
-AIPACA_DRY_RUN=false
-AIPACA_ENABLE_TRADING=true
+ALPACA_DRY_RUN=false
+ALPACA_ENABLE_TRADING=true
 ```
 
 在加入更完整的回测、订单状态追踪和停止开关之前，不建议打开 paper order 提交。
@@ -68,11 +68,11 @@ tests/               基础单元测试
 
 ### 运行模式
 
-AIPACA 目前一次只运行一轮交易循环。系统默认处于 dry-run 模式，不会提交订单。只有下面两个配置同时满足时，才允许提交 paper order：
+Alpaca 目前一次只运行一轮交易循环。系统默认处于 dry-run 模式，不会提交订单。只有下面两个配置同时满足时，才允许提交 paper order：
 
 ```text
-AIPACA_DRY_RUN=false
-AIPACA_ENABLE_TRADING=true
+ALPACA_DRY_RUN=false
+ALPACA_ENABLE_TRADING=true
 ```
 
 ### 下一阶段里程碑
