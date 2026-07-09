@@ -70,6 +70,10 @@ class AlpacaClient:
         response = self._request("GET", f"{self.base_url}/v2/positions")
         return response if isinstance(response, list) else []
 
+    def get_orders(self, *, status: str = "open") -> list[dict[str, Any]]:
+        response = self._request("GET", f"{self.base_url}/v2/orders", params={"status": status})
+        return response if isinstance(response, list) else []
+
     def get_clock(self) -> dict[str, Any]:
         return self._request("GET", f"{self.base_url}/v2/clock")
 
@@ -100,5 +104,23 @@ class AlpacaClient:
         bars = response.get("bars", [])
         return bars if isinstance(bars, list) else []
 
+    def get_latest_quote(self, symbol: str, *, feed: str = "iex") -> dict[str, Any]:
+        response = self._request(
+            "GET",
+            f"{self.data_url}/v2/stocks/{symbol}/quotes/latest",
+            params={"feed": feed},
+        )
+        quote = response.get("quote", {})
+        return quote if isinstance(quote, dict) else {}
+
     def submit_order(self, order: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", f"{self.base_url}/v2/orders", body=order)
+
+    def get_order(self, order_id: str) -> dict[str, Any]:
+        return self._request("GET", f"{self.base_url}/v2/orders/{order_id}")
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"{self.base_url}/v2/orders/{order_id}")
+
+    def close_position(self, symbol: str) -> dict[str, Any]:
+        return self._request("DELETE", f"{self.base_url}/v2/positions/{symbol}")

@@ -6,7 +6,7 @@ The current goal is to run a safe trading loop before any live trading:
 
 1. Load configuration from `.env` or environment variables.
 2. Read recent market bars from Alpaca Market Data.
-3. Generate a conservative strategy signal.
+3. Generate a VWAP mean-reversion strategy signal.
 4. Pass the signal through risk checks.
 5. Submit to Alpaca Paper Trading only when explicitly enabled.
 6. Record every decision in JSONL logs.
@@ -41,6 +41,22 @@ ALPACA_SYMBOLS
 ALPACA_TIMEFRAME
 ALPACA_BAR_LIMIT
 ALPACA_MARKET_DATA_LOOKBACK_DAYS
+ALPACA_MIN_PRICE
+ALPACA_MIN_AVG_DAILY_VOLUME_30D
+ALPACA_REQUIRE_ETB
+ALPACA_MAX_SPREAD_PCT
+ALPACA_VWAP_ENTRY_DEVIATION_PCT
+ALPACA_FIRST_ORDER_EQUITY_PCT
+ALPACA_SECOND_ORDER_DISTANCE_PCT
+ALPACA_SECOND_ORDER_EQUITY_PCT
+ALPACA_MAX_LOSS_PER_SYMBOL_EQUITY_PCT
+ALPACA_ONE_TRADE_CYCLE_PER_SYMBOL_PER_DAY
+ALPACA_MAX_ENTRIES_PER_CYCLE
+ALPACA_NO_NEW_ENTRIES_AFTER
+ALPACA_FORCE_FLATTEN_TIME
+ALPACA_FINAL_POSITION_CHECK_TIME
+ALPACA_REGULAR_SESSION_ONLY
+ALPACA_NO_OVERNIGHT
 ALPACA_MAX_NOTIONAL_PER_ORDER
 ALPACA_SHORT_SPIKE_NOTIONAL
 ALPACA_MIN_CASH_RESERVE
@@ -84,6 +100,27 @@ Run one dry-run strategy cycle:
 ```bash
 python -m src.bot
 ```
+
+Preview one guarded paper market order:
+
+```bash
+python -m src.paper_order --symbol SPY --side buy --notional 25
+```
+
+Submit one real paper market order only after explicitly enabling paper trading in `.env`:
+
+```text
+ALPACA_DRY_RUN=false
+ALPACA_ENABLE_TRADING=true
+```
+
+Then run:
+
+```bash
+python -m src.paper_order --symbol SPY --side buy --notional 25 --confirm
+```
+
+The command refuses non-paper endpoints, logs the risk decision, submits through the same `risk.py` checks as the strategy loop, and queries the submitted order status with `GET /v2/orders/{order_id}`. For real paper submission while the market is closed, add `--allow-queued` only when you intentionally want Alpaca to queue the day order.
 
 Run the long-lived monitor loop:
 

@@ -2,6 +2,61 @@
 
 本文档用于记录 Alpaca 的开发进度、关键决策、当前状态和下一步计划。
 
+## 2026-07-08
+
+### VWAP 双向偏离反转策略
+
+- 已将主策略推进为 VWAP mean-reversion trade cycle：
+  - 价格高于 VWAP `+4%` 触发做空第一笔市价单。
+  - 价格低于 VWAP `-4%` 触发做多第一笔市价单。
+  - 第一笔默认使用账户 equity 的 `8%`。
+  - 第一笔成交后提交第二笔逆势 `4%` 限价单，金额接近第一笔实际成交金额。
+- 已加入每个 symbol 的进程内状态机：`NO_POSITION`、`ENTRY_SUBMITTED`、`FIRST_FILLED`、`SECOND_ORDER_PENDING`、`POSITION_ACTIVE`、`EXITING`、`CLOSED_FOR_DAY`。
+- 已实现单 symbol 锁定规则：每天最多一个 trade cycle，每个 cycle 最多两笔入场。
+- 已加入常规交易时段控制：15:50 后不开新仓，15:55 强制平仓，15:58 二次检查。
+- 已保留 dry-run 完整 cycle 模拟，包括第一笔成交、第二笔限价、第二笔触价成交、VWAP 回穿平仓、最大亏损平仓和收盘强平。
+- 已按 Alpaca API 规范修正 universe filter：Asset 对象只使用 Alpaca 官方字段，30 日均量改由 Alpaca daily bars 成交量计算，市值过滤暂不作为 Alpaca 原生条件。
+- 已更新 `AUTOMATION_STRATEGY.md`，后续策略代码变更必须同步策略文档。
+
+## 2026-07-07
+
+### PAPER ORDER 下单实现
+
+- 已加入 `src.paper_order` 一次性 paper order 命令：
+  - 默认读取 `.env`，沿用现有安全开关。
+  - 默认 dry-run 只生成订单预览，不提交。
+  - 真实 paper 下单必须同时满足：
+
+```text
+ALPACA_DRY_RUN=false
+ALPACA_ENABLE_TRADING=true
+```
+
+  - 即使上述开关已开启，命令仍要求传入 `--confirm`。
+  - 命令拒绝非 paper endpoint，避免误用实盘 URL。
+  - 命令会读取账户、持仓、时钟和资产信息，并通过 `risk.py` 风控后才提交。
+  - 真实 paper 提交时，如果市场关闭则默认拒绝；如明确希望让 Alpaca 排队 day order，可传入 `--allow-queued`。
+
+示例：
+
+```bash
+python -m src.paper_order --symbol SPY --side buy --notional 25
+python -m src.paper_order --symbol SPY --side buy --notional 25 --confirm
+```
+
+### 订单状态追踪
+
+- `src.alpaca_client.py` 已加入 `get_order(order_id)`。
+- `src.broker.py` 已加入提交后状态轮询：
+  - dry-run 返回稳定的订单预览结构。
+  - 真实提交返回提交响应和 `latest_status`。
+  - `src.bot` 在策略触发真实 paper order 后也会查询订单状态。
+- 订单提交失败会写入 `order_error` / `paper_order_error` 日志。
+
+### 验证结果
+
+- 已补充 broker 和 paper_order 单元测试，覆盖 dry-run 预览、状态轮询、paper endpoint 保护、真实提交确认参数和手动订单参数校验。
+
 ## 2026-07-02
 
 ### 当前状态

@@ -83,6 +83,27 @@ class RiskTests(unittest.TestCase):
 
         self.assertFalse(decision.approved)
 
+    def test_allows_second_short_limit_order_when_short_position_exists(self):
+        signal = Signal(
+            symbol="SPY",
+            side="sell",
+            reason="test",
+            notional=50,
+            position_intent="sell_to_open",
+            order_type="limit",
+            limit_price=104,
+        )
+        limits = RiskLimits(["SPY"], 100, 1000, True)
+
+        decision = evaluate_signal(
+            signal,
+            {"cash": "5000", "buying_power": "5000"},
+            limits,
+            positions=[{"symbol": "SPY", "qty": "-1"}],
+        )
+
+        self.assertTrue(decision.approved)
+
     def test_approves_buy_to_close_existing_short(self):
         signal = Signal(
             symbol="SPY",

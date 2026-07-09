@@ -63,13 +63,30 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
         ),
         ConfigCheck(
             "max_notional_per_order",
-            0 < settings.max_notional_per_order <= 1000,
-            f"max order notional is {settings.max_notional_per_order}",
+            settings.max_notional_per_order >= 0,
+            "max order notional is unlimited by local cap"
+            if settings.max_notional_per_order == 0
+            else f"max order notional is {settings.max_notional_per_order}",
         ),
         ConfigCheck(
             "short_spike_notional",
-            0 < settings.short_spike_notional <= settings.max_notional_per_order,
+            settings.short_spike_notional > 0
+            and (settings.max_notional_per_order == 0 or settings.short_spike_notional <= settings.max_notional_per_order),
             f"short spike notional is {settings.short_spike_notional}",
+        ),
+        ConfigCheck(
+            "vwap_strategy",
+            settings.vwap_entry_deviation_pct > 0
+            and settings.first_order_equity_pct > 0
+            and settings.second_order_distance_pct > 0
+            and settings.max_loss_per_symbol_equity_pct > 0,
+            (
+                "VWAP mean-reversion params are set: "
+                f"entry={settings.vwap_entry_deviation_pct}%, "
+                f"first={settings.first_order_equity_pct}%, "
+                f"second_distance={settings.second_order_distance_pct}%, "
+                f"max_loss={settings.max_loss_per_symbol_equity_pct}%"
+            ),
         ),
         ConfigCheck(
             "journal_path",
