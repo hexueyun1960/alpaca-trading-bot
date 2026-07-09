@@ -38,6 +38,8 @@ ALPACA_API_SECRET_KEY
 ALPACA_BASE_URL
 ALPACA_DATA_URL
 ALPACA_SYMBOLS
+ALPACA_DYNAMIC_UNIVERSE
+ALPACA_UNIVERSE_MAX_SYMBOLS
 ALPACA_TIMEFRAME
 ALPACA_BAR_LIMIT
 ALPACA_MARKET_DATA_LOOKBACK_DAYS
@@ -86,6 +88,17 @@ ALPACA_ENABLE_TRADING=true
 ```
 
 Live trading is blocked unless `ALPACA_ALLOW_LIVE_TRADING=true` is also set. Do not enable live trading until the bot has been reviewed, monitored, and tested in paper mode.
+
+## Universe
+
+By default the bot scans only `ALPACA_SYMBOLS`. To build the scan list from Alpaca active US equity assets, enable:
+
+```text
+ALPACA_DYNAMIC_UNIVERSE=true
+ALPACA_UNIVERSE_MAX_SYMBOLS=100
+```
+
+Dynamic universe mode still applies the strategy filters before entry: price, 30-day average volume from daily bars, ETB when available, spread, tradable status, and shortable status for short entries.
 
 ## Commands
 

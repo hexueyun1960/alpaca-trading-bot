@@ -13,9 +13,10 @@
   - 第一笔成交后提交第二笔逆势 `4%` 限价单，金额接近第一笔实际成交金额。
 - 已加入每个 symbol 的进程内状态机：`NO_POSITION`、`ENTRY_SUBMITTED`、`FIRST_FILLED`、`SECOND_ORDER_PENDING`、`POSITION_ACTIVE`、`EXITING`、`CLOSED_FOR_DAY`。
 - 已实现单 symbol 锁定规则：每天最多一个 trade cycle，每个 cycle 最多两笔入场。
-- 已加入常规交易时段控制：15:50 后不开新仓，15:55 强制平仓，15:58 二次检查。
+- 已加入常规交易时段控制：15:30 后不开新仓，15:55 强制平仓，15:58 二次检查。
 - 已保留 dry-run 完整 cycle 模拟，包括第一笔成交、第二笔限价、第二笔触价成交、VWAP 回穿平仓、最大亏损平仓和收盘强平。
-- 已按 Alpaca API 规范修正 universe filter：Asset 对象只使用 Alpaca 官方字段，30 日均量改由 Alpaca daily bars 成交量计算，市值过滤暂不作为 Alpaca 原生条件。
+- 已按 Alpaca API 规范修正 universe filter：Asset 对象只使用 Alpaca 官方字段，30 日均量改由 Alpaca daily bars 成交量计算。
+- 已加入可选动态选股池：`ALPACA_DYNAMIC_UNIVERSE=true` 时从 Alpaca active `us_equity` assets 构建扫描列表，并通过 `ALPACA_UNIVERSE_MAX_SYMBOLS` 控制每轮最多扫描数量。
 - 已更新 `AUTOMATION_STRATEGY.md`，后续策略代码变更必须同步策略文档。
 
 ## 2026-07-07

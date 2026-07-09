@@ -66,6 +66,14 @@ def _as_float(value: object, default: float = 0.0) -> float:
         return default
 
 
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 def _nth_sunday(year: int, month: int, nth: int) -> datetime:
     day = datetime(year, month, 1, tzinfo=timezone.utc)
     days_until_sunday = (6 - day.weekday()) % 7
@@ -170,6 +178,89 @@ def _rejection_event_type(reasons: list[str]) -> str:
     if any("spread_pct" in reason or "bid/ask" in reason for reason in reasons):
         return "spread_rejected"
     return "universe_rejected"
+
+
+def _asset_symbol(asset: dict) -> str:
+    return str(asset.get("symbol", "")).upper()
+
+
+def _asset_class(asset: dict) -> str:
+    return str(asset.get("class", asset.get("asset_class", ""))).lower()
+
+
+def _asset_eligible_for_dynamic_universe(asset: dict, settings: Settings) -> bool:
+    if str(asset.get("status", "")).lower() != "active":
+        return False
+    asset_class = _asset_class(asset)
+    if asset_class and asset_class != "us_equity":
+        return False
+    if not _as_bool(asset.get("tradable")):
+        return False
+    if settings.require_etb and "easy_to_borrow" in asset and not _as_bool(asset.get("easy_to_borrow")):
+        return False
+    return bool(_asset_symbol(asset))
+
+
+def _dynamic_universe_symbols(
+    *,
+    client: AlpacaClient,
+    settings: Settings,
+    journal: TradeJournal,
+) -> list[str]:
+    if not settings.dynamic_universe:
+        return settings.symbols
+
+    if settings.universe_max_symbols <= 0:
+        journal.record(
+            "dynamic_universe_error",
+            {
+                "reason": "ALPACA_UNIVERSE_MAX_SYMBOLS must be positive",
+                "max_symbols": settings.universe_max_symbols,
+            },
+        )
+        return []
+
+    try:
+        assets = client.get_assets(status="active", asset_class="us_equity")
+    except AlpacaError as exc:
+        journal.record(
+            "dynamic_universe_error",
+            {
+                "reason": str(exc),
+            },
+        )
+        logging.error("Unable to load dynamic universe; skipping new entries: %s", exc)
+        return []
+
+    symbols = sorted(
+        {
+            _asset_symbol(asset)
+            for asset in assets
+            if _asset_eligible_for_dynamic_universe(asset, settings)
+        }
+    )
+    if settings.universe_max_symbols > 0:
+        symbols = symbols[: settings.universe_max_symbols]
+
+    if not symbols:
+        journal.record(
+            "dynamic_universe_empty",
+            {
+                "asset_count": len(assets),
+            },
+        )
+        return []
+
+    journal.record(
+        "dynamic_universe_selected",
+        {
+            "asset_count": len(assets),
+            "selected_count": len(symbols),
+            "max_symbols": settings.universe_max_symbols,
+            "symbols": symbols,
+        },
+    )
+    return symbols
 
 
 def _latest_price_and_vwap_from_bars(bars: list[dict]) -> tuple[float | None, float | None]:
@@ -540,6 +631,7 @@ def _handle_force_flatten(
     symbols = {str(position.get("symbol", "")).upper() for position in positions}
     symbols.update(str(order.get("symbol", "")).upper() for order in open_orders)
     symbols.update(settings.symbols)
+    symbols.update(SYMBOL_STATES)
     for symbol in sorted(symbol for symbol in symbols if symbol):
         state = _sync_state(
             symbol=symbol,
@@ -669,19 +761,22 @@ def run_once(settings: Settings | None = None) -> int:
     trade_date = _current_trade_date(clock)
     session = _session_flags(settings, clock)
 
-    limits = RiskLimits(
-        allowed_symbols=settings.symbols,
-        max_notional_per_order=settings.max_notional_per_order,
-        min_cash_reserve=settings.min_cash_reserve,
-        can_submit_orders=settings.can_submit_orders,
-    )
-
     if not session["regular"]:
         journal.record("market_closed", {"clock": clock, "session": session})
         logging.info("Market is closed or outside regular session; skipping new entries.")
         return 0
 
     if session["force_flatten"] or session["final_position_check"]:
+        flatten_symbols = set(settings.symbols)
+        flatten_symbols.update(str(position.get("symbol", "")).upper() for position in positions)
+        flatten_symbols.update(str(order.get("symbol", "")).upper() for order in open_orders)
+        flatten_symbols.update(SYMBOL_STATES)
+        limits = RiskLimits(
+            allowed_symbols=sorted(symbol for symbol in flatten_symbols if symbol),
+            max_notional_per_order=settings.max_notional_per_order,
+            min_cash_reserve=settings.min_cash_reserve,
+            can_submit_orders=settings.can_submit_orders,
+        )
         _handle_force_flatten(
             client=client,
             journal=journal,
@@ -694,7 +789,21 @@ def run_once(settings: Settings | None = None) -> int:
         )
         return 0
 
-    for symbol in settings.symbols:
+    scan_symbols = _dynamic_universe_symbols(client=client, settings=settings, journal=journal)
+    scan_symbol_set = set(scan_symbols)
+    scan_symbol_set.update(str(position.get("symbol", "")).upper() for position in positions)
+    scan_symbol_set.update(str(order.get("symbol", "")).upper() for order in open_orders)
+    scan_symbol_set.update(SYMBOL_STATES)
+    scan_symbols = sorted(symbol for symbol in scan_symbol_set if symbol)
+
+    limits = RiskLimits(
+        allowed_symbols=scan_symbols,
+        max_notional_per_order=settings.max_notional_per_order,
+        min_cash_reserve=settings.min_cash_reserve,
+        can_submit_orders=settings.can_submit_orders,
+    )
+
+    for symbol in scan_symbols:
         state = _sync_state(
             symbol=symbol,
             trade_date=trade_date,

@@ -61,6 +61,8 @@ class Settings:
     journal_path: str
     monitor_interval_seconds: int
     allow_live_trading: bool = False
+    dynamic_universe: bool = False
+    universe_max_symbols: int = 100
     min_price: float = 1.0
     min_avg_daily_volume_30d: float = 3_000_000.0
     require_etb: bool = True
@@ -72,7 +74,7 @@ class Settings:
     max_loss_per_symbol_equity_pct: float = 1.0
     one_trade_cycle_per_symbol_per_day: bool = True
     max_entries_per_cycle: int = 2
-    no_new_entries_after: str = "15:50"
+    no_new_entries_after: str = "15:30"
     force_flatten_time: str = "15:55"
     final_position_check_time: str = "15:58"
     regular_session_only: bool = True
@@ -109,6 +111,8 @@ def load_settings() -> Settings:
         journal_path=os.getenv("ALPACA_JOURNAL_PATH", "logs/trade_journal.jsonl"),
         monitor_interval_seconds=_as_int("ALPACA_MONITOR_INTERVAL_SECONDS", 60),
         allow_live_trading=_as_bool(os.getenv("ALPACA_ALLOW_LIVE_TRADING"), default=False),
+        dynamic_universe=_as_bool(os.getenv("ALPACA_DYNAMIC_UNIVERSE"), default=False),
+        universe_max_symbols=_as_int("ALPACA_UNIVERSE_MAX_SYMBOLS", 100),
         min_price=_as_float("ALPACA_MIN_PRICE", 1.0),
         min_avg_daily_volume_30d=_as_float("ALPACA_MIN_AVG_DAILY_VOLUME_30D", 3_000_000.0),
         require_etb=_as_bool(os.getenv("ALPACA_REQUIRE_ETB"), default=True),
@@ -123,7 +127,7 @@ def load_settings() -> Settings:
             default=True,
         ),
         max_entries_per_cycle=_as_int("ALPACA_MAX_ENTRIES_PER_CYCLE", 2),
-        no_new_entries_after=os.getenv("ALPACA_NO_NEW_ENTRIES_AFTER", "15:50"),
+        no_new_entries_after=os.getenv("ALPACA_NO_NEW_ENTRIES_AFTER", "15:30"),
         force_flatten_time=os.getenv("ALPACA_FORCE_FLATTEN_TIME", "15:55"),
         final_position_check_time=os.getenv("ALPACA_FINAL_POSITION_CHECK_TIME", "15:58"),
         regular_session_only=_as_bool(os.getenv("ALPACA_REGULAR_SESSION_ONLY"), default=True),

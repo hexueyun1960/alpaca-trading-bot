@@ -48,6 +48,7 @@ load_settings()
   -> get_orders(status="open")
   -> get_clock()
   -> session checks
+  -> build fixed or dynamic scan universe
   -> load_recent_bars()
   -> vwap_mean_reversion_exit_signal()
   -> vwap_mean_reversion_entry_signal()
@@ -73,6 +74,13 @@ load_settings()
 
 ## Universe 与资产筛选
 
+当前支持两种扫描模式：
+
+- 固定扫描池：`ALPACA_DYNAMIC_UNIVERSE=false` 时，只扫描 `ALPACA_SYMBOLS` 中列出的股票。
+- 动态扫描池：`ALPACA_DYNAMIC_UNIVERSE=true` 时，从 Alpaca `/v2/assets` 读取 active `us_equity` assets，先保留 active、tradable、符合 ETB 设置的股票，再按 symbol 排序并限制到 `ALPACA_UNIVERSE_MAX_SYMBOLS` 个。默认最大数量是 `100`。
+
+动态池拉取失败、筛选为空或 `ALPACA_UNIVERSE_MAX_SYMBOLS <= 0` 时，本轮不会回退到 `ALPACA_SYMBOLS` 开新仓，而是跳过新入场并记录 `dynamic_universe_error` 或 `dynamic_universe_empty`。无论固定池还是动态池，当前已有持仓、未成交订单和本地 `SYMBOL_STATES` 中的 symbol 都会合并进本轮扫描列表，用于退出监控和状态同步；动态池限制只约束新入场扫描规模。
+
 入场前必须通过 `evaluate_vwap_mean_reversion_asset()`：
 
 - `price > ALPACA_MIN_PRICE`，默认 `1`。
@@ -82,7 +90,7 @@ load_settings()
 - 必须是 active、tradable asset。
 - 做空入场必须 shortable；做多入场不要求 shortable。
 
-按 Alpaca Assets API 规范，Asset 对象不提供 `market_cap` 或 `avg_daily_volume_30d` 字段。因此当前实现不会把市值作为 Alpaca 原生 universe filter；如后续需要市值过滤，必须接入外部 fundamentals 数据源或本地 universe 文件，并同步更新本文档。
+按 Alpaca Assets API 规范，Asset 对象不提供 `avg_daily_volume_30d` 字段；当前实现通过 Alpaca `1Day` bars 的成交量自行计算 30 日均量。
 
 Spread 计算：
 
@@ -98,7 +106,7 @@ spread_pct = (ask - bid) / mid_price * 100
 当前 `src.bot` 使用 Alpaca clock 和 New York time 控制交易窗口：
 
 - 常规交易时段：09:30 到 16:00。
-- `ALPACA_NO_NEW_ENTRIES_AFTER=15:50` 后不再开新仓。
+- `ALPACA_NO_NEW_ENTRIES_AFTER=15:30` 后不再开新仓，即收盘前半小时停止新入场。
 - `ALPACA_FORCE_FLATTEN_TIME=15:55` 后触发强制取消订单和平仓。
 - `ALPACA_FINAL_POSITION_CHECK_TIME=15:58` 后再次检查残留持仓和挂单。
 - 非常规时段记录 `market_closed`，不扫描新入场。
@@ -190,7 +198,7 @@ Dry-run 模式会模拟第一笔成交、第二笔限价单、第二笔触价成
 
 风控逻辑位于 `src/risk.py`。当前所有 `buy` / `sell` 信号都必须通过以下检查：
 
-- 标的必须在 `ALPACA_SYMBOLS` 白名单中。
+- 标的必须在本轮扫描 universe 中；固定模式下等于 `ALPACA_SYMBOLS`，动态模式下等于本轮 Alpaca assets 选出的 symbol 列表。
 - 订单金额或数量必须大于 0。
 - 如果 `ALPACA_MAX_NOTIONAL_PER_ORDER > 0`，单笔订单金额不能超过该上限；默认 `0` 表示不使用本地固定金额上限。
 - 买入开仓后现金不能低于 `ALPACA_MIN_CASH_RESERVE`。
@@ -239,13 +247,15 @@ logs/trade_journal.jsonl
 - `state_mismatch`
 - `closed_for_day`
 - `market_closed`
+- `dynamic_universe_selected`
+- `dynamic_universe_empty`
+- `dynamic_universe_error`
 
 日志 payload 至少尽量包含：`symbol`、`event_type`、`price`、`vwap`、`vwap_deviation_pct`、`position_direction`、`qty`、`notional`、`account_equity`、`state`、`reason`。
 
 ## 当前限制
 
 - 状态目前存放在进程内；monitor 进程重启后会依赖 Alpaca 持仓和挂单同步来避免重复下单，但还没有持久化 trade cycle 状态。
-- Alpaca Asset 对象不提供市值，当前不会执行市值过滤。
 - 30 日均量由 Alpaca daily bars 计算；如果无法取得有效日线成交量，当前会按规则拒绝该股票。
 - 当前没有回测模块。
 - 当前没有 dashboard。

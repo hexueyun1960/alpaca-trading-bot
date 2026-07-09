@@ -26,9 +26,10 @@ def run_monitor(
     cycle = 0
 
     logging.info(
-        "Starting monitor loop: interval=%ss symbols=%s dry_run=%s enable_trading=%s",
+        "Starting monitor loop: interval=%ss symbols=%s dynamic_universe=%s dry_run=%s enable_trading=%s",
         interval,
         ",".join(settings.symbols),
+        settings.dynamic_universe,
         settings.dry_run,
         settings.enable_trading,
     )

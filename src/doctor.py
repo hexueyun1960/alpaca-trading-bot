@@ -46,8 +46,21 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
         ),
         ConfigCheck(
             "symbols",
-            bool(settings.symbols),
-            f"symbols: {', '.join(settings.symbols)}" if settings.symbols else "no symbols configured",
+            settings.dynamic_universe or bool(settings.symbols),
+            "dynamic universe enabled"
+            if settings.dynamic_universe
+            else f"symbols: {', '.join(settings.symbols)}"
+            if settings.symbols
+            else "no symbols configured",
+        ),
+        ConfigCheck(
+            "dynamic_universe",
+            not settings.dynamic_universe or settings.universe_max_symbols > 0,
+            f"dynamic universe max symbols is {settings.universe_max_symbols}"
+            if settings.dynamic_universe and settings.universe_max_symbols > 0
+            else "fixed ALPACA_SYMBOLS universe"
+            if not settings.dynamic_universe
+            else "ALPACA_UNIVERSE_MAX_SYMBOLS must be positive when dynamic universe is enabled",
         ),
         ConfigCheck(
             "bar_limit",

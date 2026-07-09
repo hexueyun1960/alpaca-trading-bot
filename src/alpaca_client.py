@@ -80,6 +80,19 @@ class AlpacaClient:
     def get_asset(self, symbol: str) -> dict[str, Any]:
         return self._request("GET", f"{self.base_url}/v2/assets/{symbol}")
 
+    def get_assets(
+        self,
+        *,
+        status: str = "active",
+        asset_class: str = "us_equity",
+    ) -> list[dict[str, Any]]:
+        response = self._request(
+            "GET",
+            f"{self.base_url}/v2/assets",
+            params={"status": status, "asset_class": asset_class},
+        )
+        return response if isinstance(response, list) else []
+
     def get_stock_bars(
         self,
         symbol: str,
