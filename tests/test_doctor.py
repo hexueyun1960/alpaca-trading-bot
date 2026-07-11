@@ -80,6 +80,31 @@ class DoctorTests(unittest.TestCase):
 
         self.assertFalse(interval.ok)
 
+    def test_dynamic_universe_zero_max_means_unlimited(self):
+        checks = validate_settings(make_settings(dynamic_universe=True, universe_max_symbols=0))
+        dynamic_universe = next(check for check in checks if check.name == "dynamic_universe")
+
+        self.assertTrue(dynamic_universe.ok)
+        self.assertEqual(dynamic_universe.message, "dynamic universe max symbols is unlimited after prefilters")
+
+    def test_dynamic_universe_rejects_negative_max(self):
+        checks = validate_settings(make_settings(dynamic_universe=True, universe_max_symbols=-1))
+        dynamic_universe = next(check for check in checks if check.name == "dynamic_universe")
+
+        self.assertFalse(dynamic_universe.ok)
+
+    def test_second_entry_requires_hard_stop_beyond_trigger(self):
+        checks = validate_settings(
+            make_settings(
+                enable_second_entry=True,
+                second_order_distance_pct=4,
+                hard_stop_distance_pct=4,
+            )
+        )
+        hard_stop_check = next(check for check in checks if check.name == "hard_stop_vs_second_entry")
+
+        self.assertFalse(hard_stop_check.ok)
+
 
 if __name__ == "__main__":
     unittest.main()

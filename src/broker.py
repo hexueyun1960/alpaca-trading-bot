@@ -34,6 +34,8 @@ def build_order(signal: Signal) -> dict:
         order["limit_price"] = str(round(signal.limit_price or 0, 2))
     if signal.position_intent:
         order["position_intent"] = signal.position_intent
+    if signal.client_order_id:
+        order["client_order_id"] = signal.client_order_id
     if signal.qty is not None:
         order["qty"] = str(round(signal.qty, 6))
     else:
@@ -43,6 +45,57 @@ def build_order(signal: Signal) -> dict:
 
 def build_market_order(signal: Signal) -> dict:
     return build_order(signal)
+
+
+def build_protective_stop_order(
+    *,
+    symbol: str,
+    position_direction: str,
+    qty: float,
+    stop_price: float,
+    client_order_id: str,
+) -> dict:
+    if position_direction not in {"long", "short"}:
+        raise ValueError("position_direction must be long or short.")
+    if qty <= 0:
+        raise ValueError("Protective stop qty must be positive.")
+    if stop_price <= 0:
+        raise ValueError("Protective stop price must be positive.")
+
+    return {
+        "symbol": symbol.upper(),
+        "side": "sell" if position_direction == "long" else "buy",
+        "type": "stop",
+        "time_in_force": "day",
+        "extended_hours": False,
+        "qty": str(round(qty, 6)),
+        "stop_price": str(round(stop_price, 2)),
+        "client_order_id": client_order_id,
+        "position_intent": "sell_to_close" if position_direction == "long" else "buy_to_close",
+    }
+
+
+def submit_protective_stop_order(
+    client: AlpacaClient,
+    *,
+    symbol: str,
+    position_direction: str,
+    qty: float,
+    stop_price: float,
+    client_order_id: str,
+    dry_run: bool,
+) -> dict:
+    order = build_protective_stop_order(
+        symbol=symbol,
+        position_direction=position_direction,
+        qty=qty,
+        stop_price=stop_price,
+        client_order_id=client_order_id,
+    )
+    if dry_run:
+        return {"submitted": False, "dry_run": True, "order": order}
+    response = client.submit_order(order)
+    return {"submitted": True, "dry_run": False, "order": order, "response": response}
 
 
 def wait_for_order_status(

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 SignalSide = Literal["buy", "sell", "hold"]
@@ -19,6 +20,11 @@ TradeStateName = Literal[
     "CLOSED_FOR_DAY",
 ]
 
+try:
+    NY_TZ = ZoneInfo("America/New_York")
+except ZoneInfoNotFoundError:
+    NY_TZ = None
+
 
 @dataclass(frozen=True)
 class Signal:
@@ -30,10 +36,12 @@ class Signal:
     position_intent: PositionIntent | None = None
     order_type: OrderType = "market"
     limit_price: float | None = None
+    client_order_id: str | None = None
     position_direction: PositionDirection | None = None
     price: float | None = None
     vwap: float | None = None
     vwap_deviation_pct: float | None = None
+    allow_position_add: bool = False
 
 
 @dataclass(frozen=True)
@@ -202,21 +210,52 @@ def evaluate_short_spike_asset(asset: dict) -> AssetEligibility:
     )
 
 
-def _latest_price_and_vwap(bars: list[dict]) -> tuple[float, float] | None:
+def _session_bars_for_latest_day(bars: list[dict]) -> list[dict]:
+    timestamps = [_bar_timestamp(bar) for bar in bars]
+    latest_timestamp = next((timestamp for timestamp in reversed(timestamps) if timestamp is not None), None)
+    if latest_timestamp is None:
+        return bars
+
+    session_start = time(9, 30)
+    session_end = time(16, 0)
+    selected = []
+    for bar, timestamp in zip(bars, timestamps):
+        if timestamp is None:
+            continue
+        if timestamp.date() != latest_timestamp.date():
+            continue
+        if not (session_start <= timestamp.time() < session_end):
+            continue
+        selected.append(bar)
+    return selected
+
+
+def latest_price_and_session_vwap(bars: list[dict]) -> tuple[float, float] | None:
     if not bars:
         return None
 
-    latest = bars[-1]
-    price = latest.get("c", latest.get("close"))
-    vwap = latest.get("vw", latest.get("vwap"))
-    if price is None or vwap is None:
+    session_bars = _session_bars_for_latest_day(bars)
+    if not session_bars:
         return None
 
-    price_value = float(price)
-    vwap_value = float(vwap)
-    if price_value <= 0 or vwap_value <= 0:
+    latest = session_bars[-1]
+    price_value = _bar_price(latest)
+    if price_value is None or price_value <= 0:
         return None
-    return price_value, vwap_value
+
+    weighted_vwap = 0.0
+    total_volume = 0.0
+    for bar in session_bars:
+        bar_vwap = _bar_vwap(bar)
+        volume = _bar_volume(bar)
+        if bar_vwap is None or volume is None or bar_vwap <= 0 or volume <= 0:
+            continue
+        weighted_vwap += bar_vwap * volume
+        total_volume += volume
+
+    if total_volume <= 0:
+        return None
+    return price_value, weighted_vwap / total_volume
 
 
 def _position_qty(position: dict | None) -> float:
@@ -232,6 +271,32 @@ def position_direction(position: dict | None) -> PositionDirection | None:
     if qty < 0:
         return "short"
     return None
+
+
+def _bar_timestamp(bar: dict) -> datetime | None:
+    raw = bar.get("t", bar.get("timestamp"))
+    if not raw:
+        return None
+    try:
+        value = str(raw).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(NY_TZ) if NY_TZ is not None else dt
+
+
+def _bar_price(bar: dict) -> float | None:
+    return _as_optional_float(bar.get("c", bar.get("close")))
+
+
+def _bar_vwap(bar: dict) -> float | None:
+    return _as_optional_float(bar.get("vw", bar.get("vwap")))
+
+
+def _bar_volume(bar: dict) -> float | None:
+    return _as_optional_float(bar.get("v", bar.get("volume")))
 
 
 def calculate_vwap_deviation_pct(price: float, vwap: float) -> float:
@@ -252,24 +317,29 @@ def vwap_mean_reversion_entry_signal(
     state: SymbolTradeState | None = None,
     entry_deviation_pct: float = 4.0,
     first_order_equity_pct: float = 8.0,
+    fixed_entry_notional: float | None = None,
 ) -> Signal:
     current_state = state or SymbolTradeState(symbol=symbol)
     if current_state.locked:
         return Signal(symbol=symbol, side="hold", reason=f"symbol locked in {current_state.state}")
 
-    price_and_vwap = _latest_price_and_vwap(bars)
+    price_and_vwap = latest_price_and_session_vwap(bars)
     if price_and_vwap is None:
-        return Signal(symbol=symbol, side="hold", reason="latest 1-minute bar is missing price or VWAP")
+        return Signal(symbol=symbol, side="hold", reason="latest session bar is missing price, VWAP, or volume")
 
     price, vwap = price_and_vwap
     deviation_pct = calculate_vwap_deviation_pct(price, vwap)
-    notional = _notional_from_equity(account_equity, first_order_equity_pct)
+    notional = (
+        round(fixed_entry_notional, 2)
+        if fixed_entry_notional is not None and fixed_entry_notional > 0
+        else _notional_from_equity(account_equity, first_order_equity_pct)
+    )
 
     if deviation_pct >= entry_deviation_pct:
         return Signal(
             symbol=symbol,
             side="sell",
-            reason=f"price {price:.2f} is {deviation_pct:.2f}% above VWAP {vwap:.2f}",
+            reason=f"price {price:.2f} is {deviation_pct:.2f}% above session VWAP {vwap:.2f}",
             notional=notional,
             position_intent="sell_to_open",
             position_direction="short",
@@ -282,7 +352,7 @@ def vwap_mean_reversion_entry_signal(
         return Signal(
             symbol=symbol,
             side="buy",
-            reason=f"price {price:.2f} is {deviation_pct:.2f}% below VWAP {vwap:.2f}",
+            reason=f"price {price:.2f} is {deviation_pct:.2f}% below session VWAP {vwap:.2f}",
             notional=notional,
             position_intent="buy_to_open",
             position_direction="long",
@@ -294,7 +364,7 @@ def vwap_mean_reversion_entry_signal(
     return Signal(
         symbol=symbol,
         side="hold",
-        reason=f"price is {deviation_pct:.2f}% from VWAP; entry threshold is +/-{entry_deviation_pct:.2f}%",
+        reason=f"price is {deviation_pct:.2f}% from session VWAP; entry threshold is +/-{entry_deviation_pct:.2f}%",
         price=price,
         vwap=vwap,
         vwap_deviation_pct=deviation_pct,
@@ -314,9 +384,9 @@ def vwap_mean_reversion_exit_signal(
     if direction is None or qty <= 0:
         return Signal(symbol=symbol, side="hold", reason="no position to exit")
 
-    price_and_vwap = _latest_price_and_vwap(bars)
+    price_and_vwap = latest_price_and_session_vwap(bars)
     if price_and_vwap is None:
-        return Signal(symbol=symbol, side="hold", reason="latest 1-minute bar is missing price or VWAP")
+        return Signal(symbol=symbol, side="hold", reason="latest session bar is missing price, VWAP, or volume")
 
     price, vwap = price_and_vwap
     deviation_pct = calculate_vwap_deviation_pct(price, vwap)
@@ -340,7 +410,7 @@ def vwap_mean_reversion_exit_signal(
         return Signal(
             symbol=symbol,
             side="buy",
-            reason=f"price {price:.2f} crossed back through VWAP {vwap:.2f}; cover short",
+            reason=f"price {price:.2f} crossed back through session VWAP {vwap:.2f}; cover short",
             qty=qty,
             position_intent="buy_to_close",
             position_direction="short",
@@ -353,7 +423,7 @@ def vwap_mean_reversion_exit_signal(
         return Signal(
             symbol=symbol,
             side="sell",
-            reason=f"price {price:.2f} crossed back through VWAP {vwap:.2f}; close long",
+            reason=f"price {price:.2f} crossed back through session VWAP {vwap:.2f}; close long",
             qty=qty,
             position_intent="sell_to_close",
             position_direction="long",
@@ -365,7 +435,7 @@ def vwap_mean_reversion_exit_signal(
     return Signal(
         symbol=symbol,
         side="hold",
-        reason=f"{direction} position remains open; price is {deviation_pct:.2f}% from VWAP",
+        reason=f"{direction} position remains open; price is {deviation_pct:.2f}% from session VWAP",
         position_direction=direction,
         price=price,
         vwap=vwap,
@@ -377,6 +447,8 @@ def second_entry_limit_signal(
     state: SymbolTradeState,
     *,
     second_order_distance_pct: float = 4.0,
+    fixed_entry_notional: float | None = None,
+    current_price: float | None = None,
     max_entries_per_cycle: int = 2,
 ) -> Signal:
     if state.position_direction not in {"long", "short"}:
@@ -392,11 +464,25 @@ def second_entry_limit_signal(
 
     distance = second_order_distance_pct / 100
     if state.position_direction == "short":
-        limit_price = round(state.first_fill_price * (1 + distance), 2)
+        trigger_price = round(state.first_fill_price * (1 + distance), 2)
+        if current_price is None or current_price < trigger_price:
+            return Signal(
+                symbol=state.symbol,
+                side="hold",
+                reason=f"second short entry waits for price >= {trigger_price:.2f}",
+                position_direction=state.position_direction,
+            )
         side: SignalSide = "sell"
         intent: PositionIntent = "sell_to_open"
     else:
-        limit_price = round(state.first_fill_price * (1 - distance), 2)
+        trigger_price = round(state.first_fill_price * (1 - distance), 2)
+        if current_price is None or current_price > trigger_price:
+            return Signal(
+                symbol=state.symbol,
+                side="hold",
+                reason=f"second long entry waits for price <= {trigger_price:.2f}",
+                position_direction=state.position_direction,
+            )
         side = "buy"
         intent = "buy_to_open"
 
@@ -404,11 +490,17 @@ def second_entry_limit_signal(
         symbol=state.symbol,
         side=side,
         reason=f"second {state.position_direction} entry at {second_order_distance_pct:.2f}% adverse move",
-        notional=round(state.first_filled_notional, 2),
+        notional=round(
+            fixed_entry_notional
+            if fixed_entry_notional is not None and fixed_entry_notional > 0
+            else state.first_filled_notional,
+            2,
+        ),
         position_intent=intent,
-        order_type="limit",
-        limit_price=limit_price,
+        order_type="market",
         position_direction=state.position_direction,
+        price=current_price,
+        allow_position_add=True,
     )
 
 
@@ -439,9 +531,9 @@ def vwap_spike_short_signal(
     entry_threshold_pct: float = 4.5,
     notional: float = 500.0,
 ) -> Signal:
-    price_and_vwap = _latest_price_and_vwap(bars)
+    price_and_vwap = latest_price_and_session_vwap(bars)
     if price_and_vwap is None:
-        return Signal(symbol=symbol, side="hold", reason="latest 1-minute bar is missing price or VWAP")
+        return Signal(symbol=symbol, side="hold", reason="latest session bar is missing price, VWAP, or volume")
 
     price, vwap = price_and_vwap
     distance_pct = ((price - vwap) / vwap) * 100
@@ -451,7 +543,7 @@ def vwap_spike_short_signal(
         return Signal(
             symbol=symbol,
             side="buy",
-            reason=f"price {price:.2f} pierced VWAP {vwap:.2f}; cover short",
+            reason=f"price {price:.2f} pierced session VWAP {vwap:.2f}; cover short",
             qty=abs(qty),
             position_intent="buy_to_close",
         )
@@ -463,14 +555,14 @@ def vwap_spike_short_signal(
         return Signal(
             symbol=symbol,
             side="hold",
-            reason=f"short position remains open; price is {distance_pct:.2f}% from VWAP",
+            reason=f"short position remains open; price is {distance_pct:.2f}% from session VWAP",
         )
 
     if distance_pct > entry_threshold_pct:
         return Signal(
             symbol=symbol,
             side="sell",
-            reason=f"price {price:.2f} is {distance_pct:.2f}% above VWAP {vwap:.2f}",
+            reason=f"price {price:.2f} is {distance_pct:.2f}% above session VWAP {vwap:.2f}",
             notional=notional,
             position_intent="sell_to_open",
         )
@@ -478,5 +570,5 @@ def vwap_spike_short_signal(
     return Signal(
         symbol=symbol,
         side="hold",
-        reason=f"price is {distance_pct:.2f}% from VWAP; entry threshold is >{entry_threshold_pct:.2f}%",
+        reason=f"price is {distance_pct:.2f}% from session VWAP; entry threshold is >{entry_threshold_pct:.2f}%",
     )

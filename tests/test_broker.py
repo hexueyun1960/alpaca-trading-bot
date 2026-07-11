@@ -70,6 +70,19 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(order["limit_price"], "104")
         self.assertEqual(order["notional"], "800")
 
+    def test_includes_client_order_id_when_present(self):
+        order = build_market_order(
+            Signal(
+                symbol="SPY",
+                side="sell",
+                reason="test",
+                notional=100,
+                client_order_id="MR-SPY-SELL-20260710T153015Z-01",
+            )
+        )
+
+        self.assertEqual(order["client_order_id"], "MR-SPY-SELL-20260710T153015Z-01")
+
     def test_dry_run_returns_preview_without_submission(self):
         client = FakeClient()
 

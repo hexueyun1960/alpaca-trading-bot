@@ -55,17 +55,112 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
         ),
         ConfigCheck(
             "dynamic_universe",
-            not settings.dynamic_universe or settings.universe_max_symbols > 0,
-            f"dynamic universe max symbols is {settings.universe_max_symbols}"
+            not settings.dynamic_universe or settings.universe_max_symbols >= 0,
+            "dynamic universe max symbols is unlimited after prefilters"
+            if settings.dynamic_universe and settings.universe_max_symbols == 0
+            else f"dynamic universe max symbols is {settings.universe_max_symbols} after prefilters"
             if settings.dynamic_universe and settings.universe_max_symbols > 0
             else "fixed ALPACA_SYMBOLS universe"
             if not settings.dynamic_universe
-            else "ALPACA_UNIVERSE_MAX_SYMBOLS must be positive when dynamic universe is enabled",
+            else "ALPACA_UNIVERSE_MAX_SYMBOLS must be >= 0 when dynamic universe is enabled",
+        ),
+        ConfigCheck(
+            "execution_mode",
+            settings.execution_mode in {"rest", "stream", "shadow"} and bool(settings.instance_id),
+            (
+                f"execution mode is {settings.execution_mode}; "
+                f"instance_id={settings.instance_id}; "
+                f"leader_lock_required={settings.require_leader_lock}"
+            )
+            if settings.execution_mode in {"rest", "stream", "shadow"} and bool(settings.instance_id)
+            else "ALPACA_EXECUTION_MODE must be rest, stream, or shadow and ALPACA_INSTANCE_ID is required",
+        ),
+        ConfigCheck(
+            "dynamic_universe_refresh",
+            not settings.dynamic_universe
+            or (settings.universe_refresh_interval_seconds >= 60 and settings.universe_chunk_size >= 1),
+            (
+                "dynamic universe refresh="
+                f"{settings.universe_refresh_interval_seconds}s chunk_size={settings.universe_chunk_size}"
+            )
+            if settings.dynamic_universe
+            and settings.universe_refresh_interval_seconds >= 60
+            and settings.universe_chunk_size >= 1
+            else "fixed ALPACA_SYMBOLS universe"
+            if not settings.dynamic_universe
+            else "ALPACA_UNIVERSE_REFRESH_INTERVAL_SECONDS should be >= 60 and ALPACA_UNIVERSE_CHUNK_SIZE >= 1",
+        ),
+        ConfigCheck(
+            "universe_filters",
+            bool(settings.allowed_borrow_statuses) and settings.require_tradable and settings.require_etb,
+            (
+                "initial universe filters: active=true tradable=true ETB=true; "
+                f"allowed_borrow_statuses={','.join(settings.allowed_borrow_statuses)}; "
+                f"shortable_check_before_short={settings.short_require_shortable}"
+            ),
+        ),
+        ConfigCheck(
+            "websocket_scanner",
+            not settings.use_websocket
+            or (
+                settings.max_candidate_symbols >= 1
+                and settings.max_high_priority_symbols >= 1
+                and settings.max_high_priority_symbols <= settings.max_candidate_symbols
+                and settings.stale_quote_seconds >= 1
+                and settings.order_timeout_seconds >= 1
+                and settings.max_slippage_pct >= 0
+            ),
+            (
+                "websocket scanner enabled: "
+                f"feed={settings.market_data_feed} "
+                f"broad_bars={settings.websocket_broad_bars} "
+                f"candidates={settings.max_candidate_symbols} "
+                f"high_priority={settings.max_high_priority_symbols} "
+                f"top_gainers={settings.top_gainers_count} "
+                f"top_losers={settings.top_losers_count} "
+                f"retention={settings.candidate_retention_seconds}s "
+                f"stale_quote={settings.stale_quote_seconds}s "
+                f"order_timeout={settings.order_timeout_seconds}s"
+            )
+            if settings.use_websocket
+            and settings.max_candidate_symbols >= 1
+            and settings.max_high_priority_symbols >= 1
+            and settings.max_high_priority_symbols <= settings.max_candidate_symbols
+            and settings.stale_quote_seconds >= 1
+            and settings.order_timeout_seconds >= 1
+            and settings.max_slippage_pct >= 0
+            else "websocket scanner disabled"
+            if not settings.use_websocket
+            else "invalid websocket scanner settings",
+        ),
+        ConfigCheck(
+            "risk_sizing",
+            settings.max_loss_per_symbol_equity_pct > 0
+            and settings.min_buying_power_reserve >= 0
+            and settings.max_open_positions >= 1
+            and settings.max_gross_exposure_equity_pct > 0,
+            (
+                f"symbol_risk={settings.max_loss_per_symbol_equity_pct}% "
+                f"require_hard_stop={settings.require_hard_stop} "
+                f"max_open_positions={settings.max_open_positions} "
+                f"gross_exposure={settings.max_gross_exposure_equity_pct}%"
+            ),
+        ),
+        ConfigCheck(
+            "circuit_breakers",
+            settings.max_order_rejections_per_day >= 1 and settings.max_consecutive_api_errors >= 1,
+            (
+                f"stream_disconnect={settings.halt_on_stream_disconnect} "
+                f"trade_stream_disconnect={settings.halt_on_trade_stream_disconnect} "
+                f"reconciliation_failure={settings.halt_on_reconciliation_failure} "
+                f"max_order_rejections={settings.max_order_rejections_per_day} "
+                f"max_api_errors={settings.max_consecutive_api_errors}"
+            ),
         ),
         ConfigCheck(
             "bar_limit",
             settings.bar_limit >= 1,
-            "bar limit supports latest 1-minute VWAP signal"
+            "bar limit is valid; 1Min session VWAP loads at least 390 bars"
             if settings.bar_limit >= 1
             else "ALPACA_BAR_LIMIT should be at least 1",
         ),
@@ -92,13 +187,32 @@ def validate_settings(settings: Settings) -> list[ConfigCheck]:
             settings.vwap_entry_deviation_pct > 0
             and settings.first_order_equity_pct > 0
             and settings.second_order_distance_pct > 0
+            and settings.hard_stop_distance_pct > 0
             and settings.max_loss_per_symbol_equity_pct > 0,
             (
                 "VWAP mean-reversion params are set: "
                 f"entry={settings.vwap_entry_deviation_pct}%, "
                 f"first={settings.first_order_equity_pct}%, "
                 f"second_distance={settings.second_order_distance_pct}%, "
+                f"hard_stop_distance={settings.hard_stop_distance_pct}%, "
                 f"max_loss={settings.max_loss_per_symbol_equity_pct}%"
+            ),
+        ),
+        ConfigCheck(
+            "hard_stop_vs_second_entry",
+            not settings.enable_second_entry
+            or settings.hard_stop_distance_pct > settings.second_order_distance_pct,
+            "second entry disabled; hard stop distance is independent"
+            if not settings.enable_second_entry
+            else (
+                "hard stop is beyond second-entry trigger: "
+                f"hard_stop={settings.hard_stop_distance_pct}% "
+                f"second_entry={settings.second_order_distance_pct}%"
+            )
+            if settings.hard_stop_distance_pct > settings.second_order_distance_pct
+            else (
+                "ALPACA_HARD_STOP_DISTANCE_PCT must be greater than "
+                "ALPACA_SECOND_ORDER_DISTANCE_PCT when second entry is enabled"
             ),
         ),
         ConfigCheck(

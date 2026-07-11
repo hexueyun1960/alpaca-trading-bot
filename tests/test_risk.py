@@ -83,15 +83,15 @@ class RiskTests(unittest.TestCase):
 
         self.assertFalse(decision.approved)
 
-    def test_allows_second_short_limit_order_when_short_position_exists(self):
+    def test_allows_second_short_order_when_explicitly_marked_as_add(self):
         signal = Signal(
             symbol="SPY",
             side="sell",
             reason="test",
             notional=50,
             position_intent="sell_to_open",
-            order_type="limit",
-            limit_price=104,
+            order_type="market",
+            allow_position_add=True,
         )
         limits = RiskLimits(["SPY"], 100, 1000, True)
 

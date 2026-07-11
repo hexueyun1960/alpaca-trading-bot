@@ -1,0 +1,17 @@
+[Unit]
+Description=Alpaca paper trading monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/alpaca-bot
+EnvironmentFile=/opt/alpaca-bot/.env
+ExecStart=/opt/alpaca-bot/venv/bin/python -m src.monitor
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

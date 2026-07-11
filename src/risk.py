@@ -60,12 +60,12 @@ def evaluate_signal(
 
     if signal.position_intent == "buy_to_open" and current_qty < 0:
         return RiskDecision(False, "cannot open a long while a short position already exists")
-    if signal.position_intent == "buy_to_open" and current_qty > 0 and signal.order_type != "limit":
+    if signal.position_intent == "buy_to_open" and current_qty > 0 and not signal.allow_position_add:
         return RiskDecision(False, "cannot open a long while a position already exists")
 
     if signal.position_intent == "sell_to_open" and current_qty > 0:
         return RiskDecision(False, "cannot open a short while a long position already exists")
-    if signal.position_intent == "sell_to_open" and current_qty < 0 and signal.order_type != "limit":
+    if signal.position_intent == "sell_to_open" and current_qty < 0 and not signal.allow_position_add:
         return RiskDecision(False, "cannot open a short while a position already exists")
 
     if signal.position_intent == "buy_to_close" and current_qty >= 0:

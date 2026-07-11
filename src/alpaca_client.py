@@ -70,8 +70,25 @@ class AlpacaClient:
         response = self._request("GET", f"{self.base_url}/v2/positions")
         return response if isinstance(response, list) else []
 
-    def get_orders(self, *, status: str = "open") -> list[dict[str, Any]]:
-        response = self._request("GET", f"{self.base_url}/v2/orders", params={"status": status})
+    def get_orders(
+        self,
+        *,
+        status: str = "open",
+        after: str | None = None,
+        until: str | None = None,
+        limit: int | None = None,
+        direction: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"status": status}
+        if after:
+            params["after"] = after
+        if until:
+            params["until"] = until
+        if limit:
+            params["limit"] = limit
+        if direction:
+            params["direction"] = direction
+        response = self._request("GET", f"{self.base_url}/v2/orders", params=params)
         return response if isinstance(response, list) else []
 
     def get_clock(self) -> dict[str, Any]:
@@ -117,6 +134,39 @@ class AlpacaClient:
         bars = response.get("bars", [])
         return bars if isinstance(bars, list) else []
 
+    def get_stock_bars_multi(
+        self,
+        symbols: list[str],
+        *,
+        timeframe: str,
+        limit: int,
+        start: str | None = None,
+        end: str | None = None,
+        feed: str = "iex",
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not symbols:
+            return {}
+        params = {
+            "symbols": ",".join(symbols),
+            "timeframe": timeframe,
+            "limit": limit,
+            "feed": feed,
+        }
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+
+        response = self._request("GET", f"{self.data_url}/v2/stocks/bars", params=params)
+        bars = response.get("bars", {})
+        if not isinstance(bars, dict):
+            return {}
+        return {
+            str(symbol).upper(): symbol_bars
+            for symbol, symbol_bars in bars.items()
+            if isinstance(symbol_bars, list)
+        }
+
     def get_latest_quote(self, symbol: str, *, feed: str = "iex") -> dict[str, Any]:
         response = self._request(
             "GET",
@@ -132,8 +182,37 @@ class AlpacaClient:
     def get_order(self, order_id: str) -> dict[str, Any]:
         return self._request("GET", f"{self.base_url}/v2/orders/{order_id}")
 
+    def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"{self.base_url}/v2/orders:by_client_order_id",
+            params={"client_order_id": client_order_id},
+        )
+
     def cancel_order(self, order_id: str) -> dict[str, Any]:
         return self._request("DELETE", f"{self.base_url}/v2/orders/{order_id}")
 
     def close_position(self, symbol: str) -> dict[str, Any]:
         return self._request("DELETE", f"{self.base_url}/v2/positions/{symbol}")
+
+    def get_account_activities(
+        self,
+        activity_type: str,
+        *,
+        date: str | None = None,
+        after: str | None = None,
+        until: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        if date:
+            params["date"] = date
+        if after:
+            params["after"] = after
+        if until:
+            params["until"] = until
+        response = self._request(
+            "GET",
+            f"{self.base_url}/v2/account/activities/{activity_type}",
+            params=params,
+        )
+        return response if isinstance(response, list) else []
